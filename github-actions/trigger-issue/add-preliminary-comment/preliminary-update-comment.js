@@ -3,6 +3,7 @@ const fs = require("fs");
 const postComment = require('../../utils/post-issue-comment');
 const formatComment = require('../../utils/format-comment');
 const getTimeline = require('../../utils/get-timeline');
+const checkComplexityEligibility = require('./check-complexity-eligibility');
 const getTeamMembers = require('../../utils/get-team-members');
 
 // Global variables
@@ -27,7 +28,7 @@ const statusValues = new Map([
   [In_Progress, "9a878e9c"],
 ]);
 
-const READY_FOR_DEV_LABEL = "ready for dev lead";
+const READY_FOR_PRIORITIZATION = "Ready for Prioritization";
 
 /**
  * @description This function is the entry point into the JavaScript file. It formats the
@@ -58,13 +59,26 @@ async function main({ g, c }, { shouldPost, issueNum }) {
     const isAdminOrMerge = await memberOfAdminOrMergeTeam();
     const isAssignedToAnotherIssues = await assignedToAnotherIssue();
 
+    // Check if developer is allowed to work on complexity level of the issue
+    const issueComplexityPermitted = await checkComplexityEligibility(
+      github,
+      context,
+      isAdminOrMerge,
+    );
+    // If complexity not permitted, stop here, check-complexity-eligibility.js 
+    // script will perform remaining tasks and post comment
+    if (issueComplexityPermitted === false) {
+      console.log("Issue of this complexity is not permitted.");
+      return;
+    }
+
     // If developer is not in Admin or Merge Teams and assigned to another issue/s, do the following:
     if(!isAdminOrMerge && isAssignedToAnotherIssues) {
       const comment = await createComment("multiple-issue-reminder.md");
       await postComment(issueNum, comment, github, context);
 
       await unAssignDev(); // Unassign the developer
-      await addLabel(READY_FOR_DEV_LABEL); // Add 'ready for dev lead' label
+      await addLabel(READY_FOR_PRIORITIZATION); 
 
       // Update item's status to "New Issue Approval"
       const itemInfo = await getItemInfo();
@@ -193,7 +207,7 @@ async function createComment(fileName) {
 }
 
 /**
- * @description - Add 'ready for dev lead' label to the issue
+ * @description - Add label to the issue 
  * @param {String} labelName - Name of the label to add
  */
 async function addLabel(labelName) {
